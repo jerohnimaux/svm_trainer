@@ -134,11 +134,17 @@ void checkLabels(std::unordered_map<string, double> &map) {
 int main(){
     auto nsamples = 10000;
     auto projectPath = std::string("/home/jerome/workspace/Gender_Detection/svm_trainer/");
-    auto pathCSV = std::string("data/wiki_crop/data.csv");
+    auto csv_file = "data/wiki_crop/data.csv";
     auto CSVdelimiter = ',';
-    auto pathShaper = std::string("data/models/shape_predictor_5_face_landmarks.dat");
-    auto pathDescripter = std::string("data/models/dlib_face_recognition_resnet_model_v1.dat");
-    auto outputSVM = std::string("gender_recognizer.dat");
+    auto shaper_file = "data/models/shape_predictor_5_face_landmarks.dat";
+    auto descripter_file = "data/models/dlib_face_recognition_resnet_model_v1.dat";
+    auto output_file = "gender_recognizer.dat";
+
+    auto pathCSV = projectPath + csv_file;
+    auto pathShaper = projectPath + shaper_file;
+    auto pathDescripter = projectPath + descripter_file;
+    auto outputSVM = projectPath + output_file;
+
 
     // type of the sample
     typedef matrix<float, 0, 1> sample_type; //128D vector
@@ -153,15 +159,15 @@ int main(){
 
     // Getting the Data
         cout << "getting samples data..." << endl;
-    auto train_data = getCSV(projectPath + pathCSV, CSVdelimiter);
+    auto train_data = getCSV(pathCSV, CSVdelimiter);
     checkLabels(train_data);
 
-    auto shapes = getFaceShape(train_data, projectPath + pathShaper, projectPath + "data/wiki_crop/", nsamples);
+    auto shapes = getFaceShape(train_data, pathShaper, projectPath + "data/wiki_crop/", nsamples);
     cout << shapes.size() << " faces identified." << endl;
 
     anet_type descripter;
-    deserialize(pathDescripter) >> descripter;
-    samples = descripter(shapes);
+    deserialize(pathDescripter) >> descripter_file;
+    samples = descripter_file(shapes);
 
     cout << samples.size() << " samples created from shapes." << endl;
     labels = fillLabels(train_data, nsamples);
@@ -174,8 +180,8 @@ int main(){
     normalizer.train(samples);
     // now normalize each sample
     cout << "Changing samples for normalized samples..." << endl;
-    for (unsigned long i = 0; i < samples.size(); ++i)
-        samples[i] = normalizer(samples[i]);
+    for (auto &sample : samples)
+        sample = normalizer(sample);
 
     // Randomizing distribution of samples in the vector
     cout << "randomizing samples..." << endl;
@@ -190,7 +196,7 @@ int main(){
     for (double gamma = 0.00625; gamma <= 10; gamma *= 5) {
 
             // tell the trainer the parameters we want to use
-            trainer.set_kernel(kernel_type(gamma));
+            trainer.set_kernel(kernel_type(static_cast<const float>(gamma)));
             trainer.set_c(C);
 
             cout << "gamma: " << gamma << "    C: " << C;
