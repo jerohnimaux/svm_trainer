@@ -1,22 +1,3 @@
-// The contents of this file are in the public domain. See LICENSE_FOR_EXAMPLE_PROGRAMS.txt
-/*
-
-    This is an example illustrating the use of the support vector machine
-    utilities from the dlib C++ Library.  
-
-    This example creates a simple set of data to train on and then shows
-    you how to use the cross validation and svm training functions
-    to find a good decision function that can classify examples in our
-    data set.
-
-
-    The data used in this example will be 2 dimensional data and will
-    come from a distribution where points with a distance less than 10
-    from the origin are labeled +1 and all other points are labeled
-    as -1.
-        
-*/
-
 
 #include <iostream>
 #include <dlib/svm.h>
@@ -158,43 +139,35 @@ int main(){
     auto pathShaper = std::string("data/models/shape_predictor_5_face_landmarks.dat");
     auto pathDescripter = std::string("data/models/dlib_face_recognition_resnet_model_v1.dat");
     auto outputSVM = std::string("gender_recognizer.dat");
-    // The svm functions use column vectors to contain a lot of the data on which they
-    // operate. So the first thing we do here is declare a convenient typedef.  
 
-    // This typedef declares a matrix with 2 rows and 1 column.  It will be the object that
-    // contains each of our 2 dimensional samples.   (Note that if you wanted more than 2
-    // features in this vector you can simply change the 2 to something else.  Or if you
-    // don't know how many features you want until runtime then you can put a 0 here and
-    // use the matrix.set_size() member function)
+    // type of the sample
     typedef matrix<float, 0, 1> sample_type; //128D vector
 
-    // This is a typedef for the type of kernel we are going to use in this example.  In
-    // this case I have selected the radial basis kernel that can operate on our 2D
-    // sample_type objects
+    // type of kernel for the SVM. Here we choose rbf kernel
     typedef radial_basis_kernel<sample_type> kernel_type;
 
 
-    // Now we make objects to contain our samples and their respective labels.
+    // samples and labels vectors used to train the SVM
     std::vector<sample_type> samples;
     std::vector<float> labels;
 
-    // Now let's put some data into our samples and labels objects.  We do this by looping
-    // over a bunch of points and labeling them according to their distance from the
-    // origin.
-
-    cout << "getting samples data..." << endl;
+    // Getting the Data
+        cout << "getting samples data..." << endl;
     auto train_data = getCSV(projectPath + pathCSV, CSVdelimiter);
     checkLabels(train_data);
 
     auto shapes = getFaceShape(train_data, projectPath + pathShaper, projectPath + "data/wiki_crop/", nsamples);
     cout << shapes.size() << " faces identified." << endl;
+
     anet_type descripter;
     deserialize(pathDescripter) >> descripter;
     samples = descripter(shapes);
-    cout << samples.size() << " 128Dvectors created from faces." << endl;
+
+    cout << samples.size() << " samples created from shapes." << endl;
     labels = fillLabels(train_data, nsamples);
     cout << samples.size() << " labels extracted." << endl;
 
+    // Normalizing data
     cout << "trying normalization..." << endl;
     vector_normalizer<sample_type> normalizer;
     // Let the normalizer learn the mean and standard deviation of the samples.
@@ -204,25 +177,14 @@ int main(){
     for (unsigned long i = 0; i < samples.size(); ++i)
         samples[i] = normalizer(samples[i]);
 
-    // Now that we have some data we want to train on it.  However, there are two
-    // parameters to the training.  These are the nu and gamma parameters.  Our choice for
-    // these parameters will influence how good the resulting decision function is.  To
-    // test how good a particular choice of these parameters is we can use the
-    // cross_validate_trainer() function to perform n-fold cross validation on our training
-    // data.  However, there is a problem with the way we have sampled our distribution
-    // above.  The problem is that there is a definite ordering to the samples.  That is,
-    // the first half of the samples look like they are from a different distribution than
-    // the second half.  This would screw up the cross validation process but we can fix it
-    // by randomizing the order of the samples with the following function call.
+    // Randomizing distribution of samples in the vector
     cout << "randomizing samples..." << endl;
     randomize_samples(samples, labels);
 
-
-    // The nu parameter has a maximum value that is dependent on the ratio of the +1 to -1
-    // labels in the training data.  This function finds that value.
-    // here we make an instance of the svm_nu_trainer object that uses our kernel type.
+    // Creating the SVM
     svm_c_trainer<kernel_type> trainer;
 
+    // Performing cross validation to choose gamma & C parameter values
     cout << "doing cross validation" << endl;
     for (double C = 1; C < 1000000; C *= 5) {
     for (double gamma = 0.00625; gamma <= 10; gamma *= 5) {
@@ -242,27 +204,28 @@ int main(){
         }
     }
 
+    //Stop there to choose the right gamma & C parameters
+    exit(0);
 
-/*
-// From looking at the output of the above loop it turns out that good
-// values for C and gamma for this problem are 5 and 0.15625 respectively.
-// So that is what we will use.
 
-// Now we train on the full set of data and obtain the resulting decision
-// function.  The decision function will return values >= 0 for samples it
-// predicts are in the +1 class and numbers < 0 for samples it predicts to
-// be in the -1 class.
+    // Now we train on the full set of data and obtain the resulting decision
+    // function.  The decision function will return values >= 0 for samples it
+    // predicts are in the +1 class and numbers < 0 for samples it predicts to
+    // be in the -1 class.
     trainer.set_kernel(kernel_type(0.15625));
     trainer.set_c(10);
     typedef decision_function<kernel_type> dec_funct_type;
-
-// Here we are making an instance of the normalized_function object.  This object
-// provides a convenient way to store the vector normalization information along with
-// the decision function we are going to learn.
-    dec_funct_type learned_function = trainer.train(samples, labels); // perform the actual SVM training and save the results
+    typedef normalized_function<dec_funct_type> funct_type;
 
 
-    serialize(outputSVM) << learned_function;*/
+    // Object  to store the descision function alongside normalized samples
+    funct_type learned_function;
+    learned_function.normalizer = normalizer;
+    // perform the actual SVM training and save the results
+    learned_function.function = trainer.train(samples, labels);
+
+    // save the SVM in a file
+    serialize(outputSVM) << learned_function;
 }
 
 
