@@ -126,7 +126,7 @@ void checkLabels(std::unordered_map<string, double> &map) {
         if (it->second != -1 && it->second != 1) it = map.erase(it);
         else it++;
     }
-    cout << initsize - map.size() << "bad labels removed." << endl;
+    cout << initsize - map.size() << " bad labels removed." << endl;
 }
 
 
