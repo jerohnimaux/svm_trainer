@@ -86,8 +86,9 @@ unordered_map<string, double> getCSV(const string &file, char delimiter){
     return data;
 }
 
-std::vector<matrix<rgb_pixel>> getFaceShape(const unordered_map<string,
-                                                                double> &map, const std::string &pathShaper, int max = 0){
+std::vector<matrix<rgb_pixel>> getFaceShape(
+        const unordered_map<string,
+                double> &map, const std::string &pathShaper, const std::string &dataPath, int max = 0) {
 
     dlib::shape_predictor shaper;
 
@@ -104,7 +105,7 @@ std::vector<matrix<rgb_pixel>> getFaceShape(const unordered_map<string,
     if (max == 0) max = (int) map.size();
     while (it != map.end() && i < max) {
         cout << "analysing image " << i << "..." << endl;
-        auto path = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/wiki_crop/" + it->first;
+        auto path = dataPath + it->first;
         load_image(img, path);
         auto rects = detector(img);
 /*        if (rects.empty()) {
@@ -151,11 +152,12 @@ void checkLabels(std::unordered_map<string, double> &map) {
 
 int main(){
     auto nsamples = 10000;
-    auto pathCSV = "/home/jerome/workspace/Gender_Detection/svm_trainer/data//wiki_crop/data.csv";
+    auto projectPath = std::string("/home/jerome/workspace/Gender_Detection/svm_trainer/");
+    auto pathCSV = std::string("data/wiki_crop/data.csv");
     auto CSVdelimiter = ',';
-    auto pathShaper = "/home/jerome/workspace/Gender_Detection/svm_trainer/data/models/shape_predictor_5_face_landmarks.dat";
-    auto pathDescripter = "/home/jerome/workspace/Gender_Detection/svm_trainer/data/models/dlib_face_recognition_resnet_model_v1.dat";
-    auto outputSVM = "gender_recognizer.dat";
+    auto pathShaper = std::string("data/models/shape_predictor_5_face_landmarks.dat");
+    auto pathDescripter = std::string("data/models/dlib_face_recognition_resnet_model_v1.dat");
+    auto outputSVM = std::string("gender_recognizer.dat");
     // The svm functions use column vectors to contain a lot of the data on which they
     // operate. So the first thing we do here is declare a convenient typedef.  
 
@@ -181,10 +183,10 @@ int main(){
     // origin.
 
     cout << "getting samples data..." << endl;
-    auto train_data = getCSV(pathCSV, CSVdelimiter);
+    auto train_data = getCSV(projectPath + pathCSV, CSVdelimiter);
     checkLabels(train_data);
 
-    auto shapes = getFaceShape(train_data, pathShaper, nsamples);
+    auto shapes = getFaceShape(train_data, projectPath + pathShaper, projectPath + "data/wiki_crop/", nsamples);
     cout << shapes.size() << " faces identified." << endl;
     anet_type descripter;
     deserialize(pathDescripter) >> descripter;
