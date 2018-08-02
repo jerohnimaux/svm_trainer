@@ -26,9 +26,6 @@
 #include <dlib/image_processing/frontal_face_detector.h>
 #include <dlib/dnn.h>
 #include <dlib/image_io.h>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
 
 
 using namespace std;
@@ -94,7 +91,7 @@ std::vector<matrix<rgb_pixel>> getFaceShape(const unordered_map<string,
 
     dlib::shape_predictor shaper;
 
-    deserialize("/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/models/shape_predictor_5_face_landmarks.dat") >> shaper;
+    deserialize(pathShaper) >> shaper;
 
     auto shapes = std::vector<matrix<rgb_pixel>> {};
     auto detector = dlib::get_frontal_face_detector();
@@ -154,10 +151,10 @@ void checkLabels(std::unordered_map<string, double> &map) {
 
 int main(){
     auto nsamples = 10000;
-    auto pathCSV = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/wiki_crop/data.csv";
+    auto pathCSV = "/home/jerome/workspace/Gender_Detection/svm_trainer/data//wiki_crop/data.csv";
     auto CSVdelimiter = ',';
-    auto pathShaper = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/models/shape_predictor_5_face_landmarks.dat";
-    auto pathDescripter = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/models/dlib_face_recognition_resnet_model_v1.dat";
+    auto pathShaper = "/home/jerome/workspace/Gender_Detection/svm_trainer/data/models/shape_predictor_5_face_landmarks.dat";
+    auto pathDescripter = "/home/jerome/workspace/Gender_Detection/svm_trainer/data/models/dlib_face_recognition_resnet_model_v1.dat";
     auto outputSVM = "gender_recognizer.dat";
     // The svm functions use column vectors to contain a lot of the data on which they
     // operate. So the first thing we do here is declare a convenient typedef.  

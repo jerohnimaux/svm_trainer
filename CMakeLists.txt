@@ -14,11 +14,11 @@ set(DLIB_USE_LAPACK ON CACHE BOOL "Use Lapack library")
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/dlib-19.14/dlib" dlib_build)
 
 # Add matio
-link_directories("${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/matio/.libs")
+#link_directories("${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/matio/.libs")
 
 # Add Lib OpenCV
-find_package(OpenCV REQUIRED)
+#find_package(OpenCV REQUIRED)
 
 add_executable(svm_trainer main.cpp)
 
-target_link_libraries(svm_trainer ${OpenCV_LIBS} dlib::dlib libmatio.so)
+target_link_libraries(svm_trainer ${OpenCV_LIBS} dlib::dlib)
