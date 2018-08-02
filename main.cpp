@@ -166,8 +166,8 @@ int main(){
     cout << shapes.size() << " faces identified." << endl;
 
     anet_type descripter;
-    deserialize(pathDescripter) >> descripter_file;
-    samples = descripter_file(shapes);
+    deserialize(pathDescripter) >> descripter;
+    samples = descripter(shapes);
 
     cout << samples.size() << " samples created from shapes." << endl;
     labels = fillLabels(train_data, nsamples);
