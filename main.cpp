@@ -20,13 +20,145 @@
 
 #include <iostream>
 #include <dlib/svm.h>
+#include <unordered_map>
+#include <dlib/image_transforms/interpolation.h>
+#include <dlib/image_processing.h>
+#include <dlib/image_processing/frontal_face_detector.h>
+#include <dlib/dnn.h>
+#include <dlib/image_io.h>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/opencv.hpp>
+
 
 using namespace std;
 using namespace dlib;
 
+template<template<int, template<typename> class, int, typename> class block, int N,
+    template<typename> class BN, typename SUBNET>
+using residual = dlib::add_prev1<block<N, BN, 1, dlib::tag1<SUBNET>>>;
 
-int main()
-{
+template<template<int, template<typename> class, int, typename> class block, int N,
+    template<typename> class BN, typename SUBNET>
+using residual_down = dlib::add_prev2<dlib::avg_pool<2,
+                                                     2,
+                                                     2,
+                                                     2,
+                                                     dlib::skip1<dlib::tag2<block<N, BN, 2, dlib::tag1<SUBNET>>>>>>;
+
+template<int N, template<typename> class BN, int stride, typename SUBNET>
+using block  = BN<dlib::con<N, 3, 3, 1, 1, dlib::relu<BN<dlib::con<N, 3, 3, stride, stride, SUBNET>>>>>;
+
+template<int N, typename SUBNET> using ares      = dlib::relu<residual<block, N, dlib::affine, SUBNET>>;
+template<int N, typename SUBNET> using ares_down = dlib::relu<residual_down<block, N, dlib::affine, SUBNET>>;
+
+template<typename SUBNET> using alevel0 = ares_down<256, SUBNET>;
+template<typename SUBNET> using alevel1 = ares<256, ares<256, ares_down<256, SUBNET>>>;
+template<typename SUBNET> using alevel2 = ares<128, ares<128, ares_down<128, SUBNET>>>;
+template<typename SUBNET> using alevel3 = ares<64, ares<64, ares<64, ares_down<64, SUBNET>>>>;
+template<typename SUBNET> using alevel4 = ares<32, ares<32, ares<32, SUBNET>>>;
+
+using anet_type = dlib::loss_metric<dlib::fc_no_bias<128, dlib::avg_pool_everything<
+    alevel0<
+        alevel1<
+            alevel2<
+                alevel3<
+                    alevel4<
+                        dlib::max_pool<3, 3, 2, 2, dlib::relu<dlib::affine<dlib::con<32, 7, 7, 2, 2,
+                                                                                     dlib::input_rgb_image_sized<150>
+                        >>>>>>>>>>>>;
+
+unordered_map<string, double> getCSV(const string &file, char delimiter){
+    unordered_map<string, double> data {};
+    string line, value1, value2;
+    ifstream f(file, ios::in);
+    if (!f) {
+        cerr << "Failed to open file !";
+        exit(1);
+    }
+    auto nline = 0;
+    cout << "reading CSV file " << file << endl;
+
+    while (getline(f, line)) {
+        getline(std::stringstream(line), value1, delimiter);
+        getline(std::stringstream(line), value2);
+        data[value1] = stod(value2);
+        nline++;
+    }
+    cout << "Opened CSV file with " << nline << " lines." << endl;
+    return data;
+}
+
+std::vector<matrix<rgb_pixel>> getFaceShape(const unordered_map<string,
+                                                                double> &map, const std::string &pathShaper, int max = 0){
+
+    dlib::shape_predictor shaper;
+
+    deserialize("/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/models/shape_predictor_5_face_landmarks.dat") >> shaper;
+
+    auto shapes = std::vector<matrix<rgb_pixel>> {};
+    auto detector = dlib::get_frontal_face_detector();
+    auto shape = full_object_detection{};
+    auto face_chip = matrix<rgb_pixel> {};
+    auto img = matrix<rgb_pixel>{};
+
+    auto it = map.begin();
+    auto i = 0;
+    if (max == 0) max = (int) map.size();
+    while (it != map.end() && i < max) {
+        cout << "analysing image " << i << "..." << endl;
+        auto path = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/wiki_crop/" + it->first;
+        load_image(img, path);
+        auto rects = detector(img);
+/*        if (rects.empty()) {
+            cout << "Image has no faces" << endl;
+        } else if (rects.size() > 1) {
+            cout << "Image has multiple faces" << endl;
+        } else {*/
+        if (rects.size() == 1) {
+            shape = shaper(img, rects[0]);
+            extract_image_chip(img, get_face_chip_details(shape, 150, 0.25), face_chip);
+            shapes.emplace_back(face_chip);
+        }
+        it++;
+        i++;
+    }
+    return shapes;
+}
+
+std::vector<float> fillLabels(const unordered_map<string, double> &map, int max){
+    std::vector<float> values;
+    auto it = map.begin();
+    auto i = 0;
+    while (it != map.end() && i < max) {
+        values.emplace_back((float) it->second);
+        it++;
+        i++;
+    }
+    return values;
+}
+
+void checkLabels(std::unordered_map<string, double> &map) {
+    // reformat data : remove unidentified gender, change female label to -1
+    auto initsize = map.size();
+    auto it = map.begin();
+    while (it != map.end()) {
+        if (it->second == 0) it->second = -1.;
+        if (it->second != -1 && it->second != 1) it = map.erase(it);
+        else it++;
+    }
+    cout << initsize - map.size() << "bad labels removed." << endl;
+}
+
+
+
+int main(){
+    auto nsamples = 10000;
+    auto pathCSV = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/wiki_crop/data.csv";
+    auto CSVdelimiter = ',';
+    auto pathShaper = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/models/shape_predictor_5_face_landmarks.dat";
+    auto pathDescripter = "/home/larnal/workspace/CLion/HeaseRobotics/svm_trainer/data/models/dlib_face_recognition_resnet_model_v1.dat";
+    auto outputSVM = "gender_recognizer.dat";
     // The svm functions use column vectors to contain a lot of the data on which they
     // operate. So the first thing we do here is declare a convenient typedef.  
 
@@ -35,8 +167,7 @@ int main()
     // features in this vector you can simply change the 2 to something else.  Or if you
     // don't know how many features you want until runtime then you can put a 0 here and
     // use the matrix.set_size() member function)
-    typedef vector<matrix<float,0,1>> sample_type; //128D vector
-    typedef
+    typedef matrix<float, 0, 1> sample_type; //128D vector
 
     // This is a typedef for the type of kernel we are going to use in this example.  In
     // this case I have selected the radial basis kernel that can operate on our 2D
@@ -46,45 +177,33 @@ int main()
 
     // Now we make objects to contain our samples and their respective labels.
     std::vector<sample_type> samples;
-    std::vector<double> labels;
+    std::vector<float> labels;
 
     // Now let's put some data into our samples and labels objects.  We do this by looping
     // over a bunch of points and labeling them according to their distance from the
     // origin.
 
+    cout << "getting samples data..." << endl;
+    auto train_data = getCSV(pathCSV, CSVdelimiter);
+    checkLabels(train_data);
 
-    //Import images path from Matlab
-    for (int r = -20; r <= 20; ++r)
-    {
-        for (int c = -20; c <= 20; ++c)
-        {
-            sample_type samp;
-            samp(0) = r;
-            samp(1) = c;
-            samples.push_back(samp);
+    auto shapes = getFaceShape(train_data, pathShaper, nsamples);
+    cout << shapes.size() << " faces identified." << endl;
+    anet_type descripter;
+    deserialize(pathDescripter) >> descripter;
+    samples = descripter(shapes);
+    cout << samples.size() << " 128Dvectors created from faces." << endl;
+    labels = fillLabels(train_data, nsamples);
+    cout << samples.size() << " labels extracted." << endl;
 
-            // if this point is less than 10 from the origin
-            if (sqrt((double)r*r + c*c) <= 10)
-                labels.push_back(+1);
-            else
-                labels.push_back(-1);
-
-        }
-    }
-
-
-    // Here we normalize all the samples by subtracting their mean and dividing by their
-    // standard deviation.  This is generally a good idea since it often heads off
-    // numerical stability problems and also prevents one large feature from smothering
-    // others.  Doing this doesn't matter much in this example so I'm just doing this here
-    // so you can see an easy way to accomplish this with the library.  
+    cout << "trying normalization..." << endl;
     vector_normalizer<sample_type> normalizer;
-    // let the normalizer learn the mean and standard deviation of the samples
+    // Let the normalizer learn the mean and standard deviation of the samples.
     normalizer.train(samples);
     // now normalize each sample
+    cout << "Changing samples for normalized samples..." << endl;
     for (unsigned long i = 0; i < samples.size(); ++i)
-        samples[i] = normalizer(samples[i]); 
-
+        samples[i] = normalizer(samples[i]);
 
     // Now that we have some data we want to train on it.  However, there are two
     // parameters to the training.  These are the nu and gamma parameters.  Our choice for
@@ -96,165 +215,59 @@ int main()
     // the first half of the samples look like they are from a different distribution than
     // the second half.  This would screw up the cross validation process but we can fix it
     // by randomizing the order of the samples with the following function call.
+    cout << "randomizing samples..." << endl;
     randomize_samples(samples, labels);
 
 
     // The nu parameter has a maximum value that is dependent on the ratio of the +1 to -1
     // labels in the training data.  This function finds that value.
-    const double max_nu = maximum_nu(labels);
-
     // here we make an instance of the svm_nu_trainer object that uses our kernel type.
-    svm_nu_trainer<kernel_type> trainer;
+    svm_c_trainer<kernel_type> trainer;
 
-    // Now we loop over some different nu and gamma values to see how good they are.  Note
-    // that this is a very simple way to try out a few possible parameter choices.  You
-    // should look at the model_selection_ex.cpp program for examples of more sophisticated
-    // strategies for determining good parameter choices.
     cout << "doing cross validation" << endl;
-    for (double gamma = 0.00001; gamma <= 1; gamma *= 5)
-    {
-        for (double nu = 0.00001; nu < max_nu; nu *= 5)
-        {
+    for (double C = 1; C < 1000000; C *= 5) {
+    for (double gamma = 0.00625; gamma <= 10; gamma *= 5) {
+
             // tell the trainer the parameters we want to use
             trainer.set_kernel(kernel_type(gamma));
-            trainer.set_nu(nu);
+            trainer.set_c(C);
 
-            cout << "gamma: " << gamma << "    nu: " << nu;
+            cout << "gamma: " << gamma << "    C: " << C;
             // Print out the cross validation accuracy for 3-fold cross validation using
-            // the current gamma and nu.  cross_validate_trainer() returns a row vector.
+            // the current gamma and C.  cross_validate_trainer() returns a row vector.
             // The first element of the vector is the fraction of +1 training examples
             // correctly classified and the second number is the fraction of -1 training
             // examples correctly classified.
-            cout << "     cross validation accuracy: " << cross_validate_trainer(trainer, samples, labels, 3);
+            cout << "     cross validation accuracy: "
+                 << cross_validate_trainer(trainer, samples, labels, 3);
         }
     }
 
 
-    // From looking at the output of the above loop it turns out that a good value for nu
-    // and gamma for this problem is 0.15625 for both.  So that is what we will use.
+/*
+// From looking at the output of the above loop it turns out that good
+// values for C and gamma for this problem are 5 and 0.15625 respectively.
+// So that is what we will use.
 
-    // Now we train on the full set of data and obtain the resulting decision function.  We
-    // use the value of 0.15625 for nu and gamma.  The decision function will return values
-    // >= 0 for samples it predicts are in the +1 class and numbers < 0 for samples it
-    // predicts to be in the -1 class.
+// Now we train on the full set of data and obtain the resulting decision
+// function.  The decision function will return values >= 0 for samples it
+// predicts are in the +1 class and numbers < 0 for samples it predicts to
+// be in the -1 class.
     trainer.set_kernel(kernel_type(0.15625));
-    trainer.set_nu(0.15625);
+    trainer.set_c(10);
     typedef decision_function<kernel_type> dec_funct_type;
-    typedef normalized_function<dec_funct_type> funct_type;
 
-    // Here we are making an instance of the normalized_function object.  This object
-    // provides a convenient way to store the vector normalization information along with
-    // the decision function we are going to learn.  
-    funct_type learned_function;
-    learned_function.normalizer = normalizer;  // save normalization information
-    learned_function.function = trainer.train(samples, labels); // perform the actual SVM training and save the results
-
-    // print out the number of support vectors in the resulting decision function
-    cout << "\nnumber of support vectors in our learned_function is " 
-         << learned_function.function.basis_vectors.size() << endl;
-
-    // Now let's try this decision_function on some samples we haven't seen before.
-    sample_type sample;
-
-    sample(0) = 3.123;
-    sample(1) = 2;
-    cout << "This is a +1 class example, the classifier output is " << learned_function(sample) << endl;
-
-    sample(0) = 3.123;
-    sample(1) = 9.3545;
-    cout << "This is a +1 class example, the classifier output is " << learned_function(sample) << endl;
-
-    sample(0) = 13.123;
-    sample(1) = 9.3545;
-    cout << "This is a -1 class example, the classifier output is " << learned_function(sample) << endl;
-
-    sample(0) = 13.123;
-    sample(1) = 0;
-    cout << "This is a -1 class example, the classifier output is " << learned_function(sample) << endl;
+// Here we are making an instance of the normalized_function object.  This object
+// provides a convenient way to store the vector normalization information along with
+// the decision function we are going to learn.
+    dec_funct_type learned_function = trainer.train(samples, labels); // perform the actual SVM training and save the results
 
 
-    // We can also train a decision function that reports a well conditioned probability
-    // instead of just a number > 0 for the +1 class and < 0 for the -1 class.  An example
-    // of doing that follows:
-    typedef probabilistic_decision_function<kernel_type> probabilistic_funct_type;  
-    typedef normalized_function<probabilistic_funct_type> pfunct_type;
-
-    pfunct_type learned_pfunct; 
-    learned_pfunct.normalizer = normalizer;
-    learned_pfunct.function = train_probabilistic_decision_function(trainer, samples, labels, 3);
-    // Now we have a function that returns the probability that a given sample is of the +1 class.  
-
-    // print out the number of support vectors in the resulting decision function.  
-    // (it should be the same as in the one above)
-    cout << "\nnumber of support vectors in our learned_pfunct is " 
-         << learned_pfunct.function.decision_funct.basis_vectors.size() << endl;
-
-    sample(0) = 3.123;
-    sample(1) = 2;
-    cout << "This +1 class example should have high probability.  Its probability is: " 
-         << learned_pfunct(sample) << endl;
-
-    sample(0) = 3.123;
-    sample(1) = 9.3545;
-    cout << "This +1 class example should have high probability.  Its probability is: " 
-         << learned_pfunct(sample) << endl;
-
-    sample(0) = 13.123;
-    sample(1) = 9.3545;
-    cout << "This -1 class example should have low probability.  Its probability is: " 
-         << learned_pfunct(sample) << endl;
-
-    sample(0) = 13.123;
-    sample(1) = 0;
-    cout << "This -1 class example should have low probability.  Its probability is: " 
-         << learned_pfunct(sample) << endl;
-
-
-
-    // Another thing that is worth knowing is that just about everything in dlib is
-    // serializable.  So for example, you can save the learned_pfunct object to disk and
-    // recall it later like so:
-    serialize("saved_function.dat") << learned_pfunct;
-
-    // Now let's open that file back up and load the function object it contains.
-    deserialize("saved_function.dat") >> learned_pfunct;
-
-    // Note that there is also an example program that comes with dlib called the
-    // file_to_code_ex.cpp example.  It is a simple program that takes a file and outputs a
-    // piece of C++ code that is able to fully reproduce the file's contents in the form of
-    // a std::string object.  So you can use that along with the std::istringstream to save
-    // learned decision functions inside your actual C++ code files if you want.  
-
-
-
-
-    // Lastly, note that the decision functions we trained above involved well over 200
-    // basis vectors.  Support vector machines in general tend to find decision functions
-    // that involve a lot of basis vectors.  This is significant because the more basis
-    // vectors in a decision function, the longer it takes to classify new examples.  So
-    // dlib provides the ability to find an approximation to the normal output of a trainer
-    // using fewer basis vectors.  
-
-    // Here we determine the cross validation accuracy when we approximate the output using
-    // only 10 basis vectors.  To do this we use the reduced2() function.  It takes a
-    // trainer object and the number of basis vectors to use and returns a new trainer
-    // object that applies the necessary post processing during the creation of decision
-    // function objects.
-    cout << "\ncross validation accuracy with only 10 support vectors: " 
-         << cross_validate_trainer(reduced2(trainer,10), samples, labels, 3);
-
-    // Let's print out the original cross validation score too for comparison.
-    cout << "cross validation accuracy with all the original support vectors: " 
-         << cross_validate_trainer(trainer, samples, labels, 3);
-
-    // When you run this program you should see that, for this problem, you can reduce the
-    // number of basis vectors down to 10 without hurting the cross validation accuracy. 
-
-
-    // To get the reduced decision function out we would just do this:
-    learned_function.function = reduced2(trainer,10).train(samples, labels);
-    // And similarly for the probabilistic_decision_function: 
-    learned_pfunct.function = train_probabilistic_decision_function(reduced2(trainer,10), samples, labels, 3);
+    serialize(outputSVM) << learned_function;*/
 }
+
+
+
+
 
 

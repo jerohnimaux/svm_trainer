@@ -7,18 +7,18 @@ set(LIBFOLDER "libs")
 set(VISIONHEAD_FOLDER "visionhead")
 set(VISIONDOWN_FOLDER "visiondown")
 
-#Matlab libs
-set(MATLIB
-        "${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/matlab/libMatlabDataArray.so"
-        "${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/matlab/libMatlabEngine.so")
+## Add Lib Dlib
+set(USE_AVX_INSTRUCTIONS ON CACHE BOOL "Use AVX instructions")
+set(DLIB_JPEG_SUPPORT ON CACHE BOOL "Use JPEG Support")
+set(DLIB_USE_LAPACK ON CACHE BOOL "Use Lapack library")
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/dlib-19.14/dlib" dlib_build)
 
-link_directories("/home/larnal/Programmes/Matlab/bin/glnxa64"
-        "/home/larnal/Programmes/Matlab/extern/bin/glnxa64")
+# Add matio
+link_directories("${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/matio/.libs")
 
-include_directories("${CMAKE_CURRENT_LIST_DIR}/${LIBFOLDER}/matlab/include")
+# Add Lib OpenCV
+find_package(OpenCV REQUIRED)
 
+add_executable(svm_trainer main.cpp)
 
-add_executable(svm_trainer matdgns.c)
-
-target_link_libraries(svm_trainer libMatlabEngine.so libMatlabDataArray.so libmat.so libmx.so)
-message(STATUS "${MATLIB}")
+target_link_libraries(svm_trainer ${OpenCV_LIBS} dlib::dlib libmatio.so)
