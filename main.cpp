@@ -135,18 +135,60 @@ std::vector<matrix<rgb_pixel>> getFaceShape(
             extract_image_chip(img, get_face_chip_details(shape, 150, 0.25), face_chip);
             shapes.emplace_back(face_chip);
             labels.emplace_back(it->second);
-            cout << "image validated." << endl;
-
+            cout << "image validated.";
         }
+        cout << endl;
         it++;
         i++;
     }
     return shapes;
 }
 
+template<typename T, typename S>
+std::tuple<float, float> cross_validation(
+        svm_c_trainer<T> trainer,
+        const std::vector<S> &samples,
+        const std::vector<float> &labels,
+        float Cmin,
+        float Cmax,
+        float gammaMin,
+        float gammaMax,
+        int step = 5,
+        int times = 3) {
+    // Performing cross validation to choose gamma & C parameter values
+    float gammaPower = std::pow(gammaMax / gammaMin, 1.0f / step);
+    float Cpower = std::pow(Cmax / Cmin, 1.0f / step);
+    cout << "doing cross validation" << endl;
+    std::vector<std::tuple<float, float, float, float>> parameters;
+    for (float gamma = gammaMin; gamma < gammaMax; gamma *= gammaPower) {
+        for (float C = Cmin; C < Cmax; C *= Cpower) {
+            // tell the trainer the parameters we want to use
+            trainer.set_kernel(T(gamma));
+            trainer.set_c(C);
+
+            std::ostringstream str;
+            str << cross_validate_trainer(trainer, samples, labels, times);
+            std::istringstream iss(str.str());
+            std::vector<std::string> result{
+                    std::istream_iterator<std::string>(iss), {}
+            };
+            if (result.size() != 2)
+                throw std::logic_error("error during cross validation. Returned values are different of 2.");
+            parameters.emplace_back(std::make_tuple(C, gamma, stof(result[0]), stof(result[1])));
+        }
+    }
+    auto best_p = parameters[0];
+    for (auto &p : parameters) {
+        if (std::get<2>(p) + std::get<3>(p) > std::get<2>(best_p) + std::get<3>(best_p)) {
+            best_p = p;
+        }
+    }
+    return std::make_tuple(std::get<0>(best_p), std::get<1>(best_p));
+}
+
 
 int main() {
-    auto nsamples =200;
+    auto nsamples = 2000;
     auto projectPath = std::string("/home/jerome/workspace/Gender_Detection/svm_trainer/");
     auto csv_file = "data/wiki_crop/data.csv";
     auto CSVdelimiter = ',';
@@ -202,34 +244,20 @@ int main() {
 
     // Creating the SVM
     svm_c_trainer<kernel_type> trainer;
+    /*float C, gamma;
+    try {
+        std::tie(C, gamma) = cross_validation(trainer, samples, labels, 1, 5, 0.0001, 0.1);
+    } catch (std::logic_error &e){
+        cout << e.what() << endl;
+    }*/
 
-    // Performing cross validation to choose gamma & C parameter values
-    cout << "doing cross validation" << endl;
-    for (float gamma = 0.00625; gamma <= 0.03125; gamma *= 1.05) {
-        float C = 1;
-        // tell the trainer the parameters we want to use
-        trainer.set_kernel(kernel_type(gamma));
-        trainer.set_c(C);
-
-        cout << "gamma: " << gamma << "    C: " << C;
-        // Print out the cross validation accuracy for 3-fold cross validation using
-        // the current gamma and C.  cross_validate_trainer() returns a row vector.
-        // The first element of the vector is the fraction of +1 training examples
-        // correctly classified and the second number is the fraction of -1 training
-        // examples correctly classified.
-        cout << "     cross validation accuracy: "
-             << cross_validate_trainer(trainer, samples, labels, 3);
-    }
-
-    //Stop there to choose the right gamma & C parameters
-    exit(0);
 
     // Now we train on the full set of data and obtain the resulting decision
     // function.  The decision function will return values >= 0 for samples it
     // predicts are in the +1 class and numbers < 0 for samples it predicts to
     // be in the -1 class.
-    trainer.set_kernel(kernel_type(0.15625));
-    trainer.set_c(10);
+    trainer.set_kernel(kernel_type(0.00238247));
+    trainer.set_c(5);
     typedef decision_function<kernel_type> dec_funct_type;
     typedef normalized_function<dec_funct_type> funct_type;
 
@@ -238,10 +266,14 @@ int main() {
     funct_type learned_function;
     learned_function.normalizer = normalizer;
     // perform the actual SVM training and save the results
+    cout << "Start the training...  ";
     learned_function.function = trainer.train(samples, labels);
+    cout << "Training finished !" << endl;
 
     // save the SVM in a file
+    cout << "Saving the SVM to " << outputSVM << endl;
     serialize(outputSVM) << learned_function;
+    cout << "save successful !" << endl;
 }
 
 
