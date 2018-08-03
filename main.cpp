@@ -1,5 +1,8 @@
 
-#include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+#include <iterator>
 #include <dlib/svm.h>
 #include <unordered_map>
 #include <dlib/image_transforms/interpolation.h>
@@ -46,24 +49,44 @@ using anet_type = dlib::loss_metric<dlib::fc_no_bias<128, dlib::avg_pool_everyth
                                                                                      dlib::input_rgb_image_sized<150>
                         >>>>>>>>>>>>;
 
+
+
+
+template<typename Out>
+void split(const std::string &s, char delim, Out result) {
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, delim)) {
+        *(result++) = item;
+    }
+}
+
+std::vector<std::string> split(const std::string &s, char delim) {
+    std::vector<std::string> elems;
+    split(s, delim, std::back_inserter(elems));
+    return elems;
+}
+
+
 unordered_map<string, double> getCSV(const string &file, char delimiter){
     unordered_map<string, double> data {};
+
     string line, value1, value2;
     ifstream f(file, ios::in);
     if (!f) {
         cerr << "Failed to open file !";
         exit(1);
     }
-    auto nline = 0;
     cout << "reading CSV file " << file << endl;
 
     while (getline(f, line)) {
-        getline(std::stringstream(line), value1, delimiter);
-        getline(std::stringstream(line), value2);
-        data[value1] = stod(value2);
-        nline++;
+        auto elements = split (line, delimiter);
+        if (elements.size() != 2) {
+            cout << "error with CSV parsing." << endl;
+        }
+        data[elements[0]] = stod(elements[1]);
     }
-    cout << "Opened CSV file with " << nline << " lines." << endl;
+    cout << "Opened CSV file with " << data.size() << " lines." << endl;
     return data;
 }
 
@@ -122,17 +145,15 @@ void checkLabels(std::unordered_map<string, double> &map) {
     auto initsize = map.size();
     auto it = map.begin();
     while (it != map.end()) {
-        if (it->second == 0) it->second = -1.;
-        if (it->second != -1 && it->second != 1) it = map.erase(it);
+        if (it->second < 0.1) it->second = -1.;
+        if (isnan(it->second)) it = map.erase(it);
         else it++;
     }
     cout << initsize - map.size() << " bad labels removed." << endl;
 }
 
-
-
 int main(){
-    auto nsamples = 10000;
+    auto nsamples = 3000;
     auto projectPath = std::string("/home/jerome/workspace/Gender_Detection/svm_trainer/");
     auto csv_file = "data/wiki_crop/data.csv";
     auto CSVdelimiter = ',';
@@ -151,7 +172,6 @@ int main(){
 
     // type of kernel for the SVM. Here we choose rbf kernel
     typedef radial_basis_kernel<sample_type> kernel_type;
-
 
     // samples and labels vectors used to train the SVM
     std::vector<sample_type> samples;
@@ -191,10 +211,10 @@ int main(){
     svm_c_trainer<kernel_type> trainer;
 
     // Performing cross validation to choose gamma & C parameter values
-    cout << "doing cross validation" << endl;
-    for (double C = 1; C < 1000000; C *= 5) {
-    for (double gamma = 0.00625; gamma <= 10; gamma *= 5) {
 
+    cout << "doing cross validation" << endl;
+    for (double gamma = 0.00625; gamma <= 0.03125; gamma *= 1.05) {
+            float C = 1;
             // tell the trainer the parameters we want to use
             trainer.set_kernel(kernel_type(static_cast<const float>(gamma)));
             trainer.set_c(C);
@@ -208,7 +228,6 @@ int main(){
             cout << "     cross validation accuracy: "
                  << cross_validate_trainer(trainer, samples, labels, 3);
         }
-    }
 
     //Stop there to choose the right gamma & C parameters
     exit(0);
