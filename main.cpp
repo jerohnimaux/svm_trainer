@@ -15,17 +15,18 @@
 using namespace std;
 using namespace dlib;
 
+//Tyedefs for the descripter object
 template<template<int, template<typename> class, int, typename> class block, int N,
-    template<typename> class BN, typename SUBNET>
+        template<typename> class BN, typename SUBNET>
 using residual = dlib::add_prev1<block<N, BN, 1, dlib::tag1<SUBNET>>>;
 
 template<template<int, template<typename> class, int, typename> class block, int N,
-    template<typename> class BN, typename SUBNET>
+        template<typename> class BN, typename SUBNET>
 using residual_down = dlib::add_prev2<dlib::avg_pool<2,
-                                                     2,
-                                                     2,
-                                                     2,
-                                                     dlib::skip1<dlib::tag2<block<N, BN, 2, dlib::tag1<SUBNET>>>>>>;
+        2,
+        2,
+        2,
+        dlib::skip1<dlib::tag2<block<N, BN, 2, dlib::tag1<SUBNET>>>>>>;
 
 template<int N, template<typename> class BN, int stride, typename SUBNET>
 using block  = BN<dlib::con<N, 3, 3, 1, 1, dlib::relu<BN<dlib::con<N, 3, 3, stride, stride, SUBNET>>>>>;
@@ -40,17 +41,15 @@ template<typename SUBNET> using alevel3 = ares<64, ares<64, ares<64, ares_down<6
 template<typename SUBNET> using alevel4 = ares<32, ares<32, ares<32, SUBNET>>>;
 
 using anet_type = dlib::loss_metric<dlib::fc_no_bias<128, dlib::avg_pool_everything<
-    alevel0<
-        alevel1<
-            alevel2<
-                alevel3<
-                    alevel4<
-                        dlib::max_pool<3, 3, 2, 2, dlib::relu<dlib::affine<dlib::con<32, 7, 7, 2, 2,
-                                                                                     dlib::input_rgb_image_sized<150>
-                        >>>>>>>>>>>>;
-
-
-
+        alevel0<
+                alevel1<
+                        alevel2<
+                                alevel3<
+                                        alevel4<
+                                                dlib::max_pool<3, 3, 2, 2, dlib::relu<dlib::affine<dlib::con<32, 7, 7, 2, 2,
+                                                        dlib::input_rgb_image_sized<150>
+                                                >>>>>>>>>>>>;
+//----------------------------------------------------------------------------------------------------------------------
 
 template<typename Out>
 void split(const std::string &s, char delim, Out result) {
@@ -61,6 +60,7 @@ void split(const std::string &s, char delim, Out result) {
     }
 }
 
+
 std::vector<std::string> split(const std::string &s, char delim) {
     std::vector<std::string> elems;
     split(s, delim, std::back_inserter(elems));
@@ -68,8 +68,8 @@ std::vector<std::string> split(const std::string &s, char delim) {
 }
 
 
-unordered_map<string, double> getCSV(const string &file, char delimiter){
-    unordered_map<string, double> data {};
+unordered_map<string, double> getCSV(const string &file, char delimiter) {
+    unordered_map<string, double> data{};
 
     string line, value1, value2;
     ifstream f(file, ios::in);
@@ -80,7 +80,7 @@ unordered_map<string, double> getCSV(const string &file, char delimiter){
     cout << "reading CSV file " << file << endl;
 
     while (getline(f, line)) {
-        auto elements = split (line, delimiter);
+        auto elements = split(line, delimiter);
         if (elements.size() != 2) {
             cout << "error with CSV parsing." << endl;
         }
@@ -90,55 +90,6 @@ unordered_map<string, double> getCSV(const string &file, char delimiter){
     return data;
 }
 
-std::vector<matrix<rgb_pixel>> getFaceShape(
-        const unordered_map<string,
-                double> &map, const std::string &pathShaper, const std::string &dataPath, int max = 0) {
-
-    dlib::shape_predictor shaper;
-
-    deserialize(pathShaper) >> shaper;
-
-    auto shapes = std::vector<matrix<rgb_pixel>> {};
-    auto detector = dlib::get_frontal_face_detector();
-    auto shape = full_object_detection{};
-    auto face_chip = matrix<rgb_pixel> {};
-    auto img = matrix<rgb_pixel>{};
-
-    auto it = map.begin();
-    auto i = 0;
-    if (max == 0) max = (int) map.size();
-    while (it != map.end() && i < max) {
-        cout << "analysing image " << i << "..." << endl;
-        auto path = dataPath + it->first;
-        load_image(img, path);
-        auto rects = detector(img);
-/*        if (rects.empty()) {
-            cout << "Image has no faces" << endl;
-        } else if (rects.size() > 1) {
-            cout << "Image has multiple faces" << endl;
-        } else {*/
-        if (rects.size() == 1) {
-            shape = shaper(img, rects[0]);
-            extract_image_chip(img, get_face_chip_details(shape, 150, 0.25), face_chip);
-            shapes.emplace_back(face_chip);
-        }
-        it++;
-        i++;
-    }
-    return shapes;
-}
-
-std::vector<float> fillLabels(const unordered_map<string, double> &map, int max){
-    std::vector<float> values;
-    auto it = map.begin();
-    auto i = 0;
-    while (it != map.end() && i < max) {
-        values.emplace_back((float) it->second);
-        it++;
-        i++;
-    }
-    return values;
-}
 
 void checkLabels(std::unordered_map<string, double> &map) {
     // reformat data : remove unidentified gender, change female label to -1
@@ -152,8 +103,50 @@ void checkLabels(std::unordered_map<string, double> &map) {
     cout << initsize - map.size() << " bad labels removed." << endl;
 }
 
-int main(){
-    auto nsamples = 3000;
+
+std::vector<matrix<rgb_pixel>> getFaceShape(
+        const unordered_map<string,
+                double> &map,
+        const std::string &pathShaper,
+        const std::string &dataPath,
+        std::vector<float> &labels,
+        int max = 0) {
+
+    dlib::shape_predictor shaper;
+
+    deserialize(pathShaper) >> shaper;
+
+    auto shapes = std::vector<matrix<rgb_pixel>>{};
+    auto detector = dlib::get_frontal_face_detector();
+    auto shape = full_object_detection{};
+    auto face_chip = matrix<rgb_pixel>{};
+    auto img = matrix<rgb_pixel>{};
+
+    auto it = map.begin();
+    auto i = 0;
+    if (max == 0) max = (int) map.size();
+    while (it != map.end() && i < max) {
+        cout << "analysing image " << i << " of " << max << "...  ";
+        auto path = dataPath + it->first;
+        load_image(img, path);
+        auto rects = detector(img);
+        if (rects.size() == 1) {
+            shape = shaper(img, rects[0]);
+            extract_image_chip(img, get_face_chip_details(shape, 150, 0.25), face_chip);
+            shapes.emplace_back(face_chip);
+            labels.emplace_back(it->second);
+            cout << "image validated." << endl;
+
+        }
+        it++;
+        i++;
+    }
+    return shapes;
+}
+
+
+int main() {
+    auto nsamples =200;
     auto projectPath = std::string("/home/jerome/workspace/Gender_Detection/svm_trainer/");
     auto csv_file = "data/wiki_crop/data.csv";
     auto CSVdelimiter = ',';
@@ -178,11 +171,12 @@ int main(){
     std::vector<float> labels;
 
     // Getting the Data
-        cout << "getting samples data..." << endl;
+    cout << "getting samples data..." << endl;
     auto train_data = getCSV(pathCSV, CSVdelimiter);
     checkLabels(train_data);
 
-    auto shapes = getFaceShape(train_data, pathShaper, projectPath + "data/wiki_crop/", nsamples);
+    // Fill samples and labels vector with 128D vectors and labels
+    auto shapes = getFaceShape(train_data, pathShaper, projectPath + "data/wiki_crop/", labels, nsamples);
     cout << shapes.size() << " faces identified." << endl;
 
     anet_type descripter;
@@ -190,8 +184,7 @@ int main(){
     samples = descripter(shapes);
 
     cout << samples.size() << " samples created from shapes." << endl;
-    labels = fillLabels(train_data, nsamples);
-    cout << samples.size() << " labels extracted." << endl;
+    cout << labels.size() << " labels extracted." << endl;
 
     // Normalizing data
     cout << "trying normalization..." << endl;
@@ -211,27 +204,25 @@ int main(){
     svm_c_trainer<kernel_type> trainer;
 
     // Performing cross validation to choose gamma & C parameter values
-
     cout << "doing cross validation" << endl;
-    for (double gamma = 0.00625; gamma <= 0.03125; gamma *= 1.05) {
-            float C = 1;
-            // tell the trainer the parameters we want to use
-            trainer.set_kernel(kernel_type(static_cast<const float>(gamma)));
-            trainer.set_c(C);
+    for (float gamma = 0.00625; gamma <= 0.03125; gamma *= 1.05) {
+        float C = 1;
+        // tell the trainer the parameters we want to use
+        trainer.set_kernel(kernel_type(gamma));
+        trainer.set_c(C);
 
-            cout << "gamma: " << gamma << "    C: " << C;
-            // Print out the cross validation accuracy for 3-fold cross validation using
-            // the current gamma and C.  cross_validate_trainer() returns a row vector.
-            // The first element of the vector is the fraction of +1 training examples
-            // correctly classified and the second number is the fraction of -1 training
-            // examples correctly classified.
-            cout << "     cross validation accuracy: "
-                 << cross_validate_trainer(trainer, samples, labels, 3);
-        }
+        cout << "gamma: " << gamma << "    C: " << C;
+        // Print out the cross validation accuracy for 3-fold cross validation using
+        // the current gamma and C.  cross_validate_trainer() returns a row vector.
+        // The first element of the vector is the fraction of +1 training examples
+        // correctly classified and the second number is the fraction of -1 training
+        // examples correctly classified.
+        cout << "     cross validation accuracy: "
+             << cross_validate_trainer(trainer, samples, labels, 3);
+    }
 
     //Stop there to choose the right gamma & C parameters
     exit(0);
-
 
     // Now we train on the full set of data and obtain the resulting decision
     // function.  The decision function will return values >= 0 for samples it
