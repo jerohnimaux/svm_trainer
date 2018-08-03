@@ -246,7 +246,7 @@ int main() {
     svm_c_trainer<kernel_type> trainer;
     /*float C, gamma;
     try {
-        std::tie(C, gamma) = cross_validation(trainer, samples, labels, 1, 5, 0.0001, 0.1);
+        std::tie(C, gamma) = cross_validation(trainer, samples, labels, 1, 100, 0.0001, 0.1);
     } catch (std::logic_error &e){
         cout << e.what() << endl;
     }*/
